@@ -1,9 +1,49 @@
 import Editor from '@monaco-editor/react'
 import logo from '../assets/infrascribe logo.png'
 import { Link } from 'react-router-dom'
+import { Group, Panel, Separator } from "react-resizable-panels"
+import api from "../api.tsx"
+import { useState, useEffect } from 'react'
+import bot from "../assets/agents.png"
+import send from "../assets/send.png"
+
+
 export const BotChat = () =>{
+    //GET call from /introduction 
+    const [messages, setMessages] = useState<{role: string, text: string}[]>([])
+    const [input, setInput] = useState('')
+    const [terraformCode, setTerraformCode] = useState('// some comment')
+
+    useEffect (() => {
+        const fetchIntro = async () => {
+            try{
+                const response = await api.get('/introduction')
+                setMessages([{ role: 'ai', text: response.data.introduction }])
+            } catch(error){
+                console.error("Error fetching introduction",error)
+            }
+        }
+        fetchIntro()
+    }, [])
+    const handleSend = async () => {
+        if (!input.trim()) return
+        setMessages(prev => [...prev, { role: 'user', text: input }])
+        setInput('')
+        try {
+            const response = await api.post('/generate', { description: input })
+            const { summary, estimated_cost, alternatives } = response.data
+            setTerraformCode(response.data.terraform)
+            setMessages(prev => [...prev, { 
+                role: 'ai', 
+                text: `Summary: ${summary}\n\nEstimated Cost: ${estimated_cost}\n\nAlternatives: ${alternatives}` 
+            }])
+        } catch (error) {
+            console.error("Error generating infrastructure", error)
+        }
+    }
+
     return(
-        <>
+        <div className="h-screen overflow-hidden flex flex-col">
         <nav className="flex items-center justify-between bg-gray-900 px-4 pr-9 py-4 min-h-16 border-b border-gray-800">
             <div className="flex items-center">
                 <img src={logo} alt="logo" className="w-30 h-20" />
@@ -15,16 +55,69 @@ export const BotChat = () =>{
                 <button className="hover:bg-sky-700">Export</button>
             </div>
         </nav>
-        <div>
-            <div className='bg-white px-4 py-4 w-[1300px]'>
-                <h2>AI Cloud Advisor</h2>
-                <p>Describe your infrastructure needs</p>
-            </div>
-            <div>
-
-            </div>
+        <Group orientation="horizontal" className="h-[calc(100vh-4rem)]">
+            <Panel defaultSize={100} minSize={200} className='bg-white border border-gray-300'>
+                <div className='h-full flex flex-col overflow-hidden'>
+                <div className="px-4 py-4 border-b border-gray-200">
+                    <h2 className="font-semibold">AI Cloud Advisor</h2>
+                    <p className='text-slate-500'>Describe your infrastructure needs</p>
+                </div>
+                <div className='flex-1 min-h-0 overflow-auto px-4 bg-slate-50'>
+                    {messages.map((msg, i) => (
+                        <div key={i} className={`flex flex-row gap-4 pt-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            {msg.role === 'ai' && (
+                                <div className='bg-blue-100 w-12 h-12 px-1 rounded-xl flex-shrink-0'>
+                                    <img src={bot} alt="InfraScribe Bot" className="w-10 h-10"/>
+                                </div>
+                            )}
+                            <div className={`rounded-xl px-5 py-2 h-auto whitespace-pre-wrap ${msg.role === 'user' ? 'bg-sky-500 text-white' : 'bg-slate-100'}`}>
+                                <p className='text-base'>{msg.text}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                <div className='flex flex-row items-center bg-white border border-gray-300 h-20 px-3'>
+                    <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} className='bg-slate-100 w-[75rem] h-12 px-4 rounded-xl' placeholder="Describe your infrastructure"/>
+                    <div onClick={handleSend} className='ml-4 bg-neutral-400 w-12 h-12 rounded-xl cursor-pointer hover:bg-sky-500'>
+                        <img src={send} alt='Send' className='w-5 h-5 ml-3 mt-3.5'/>
+                    </div>
+                </div>
+                </div>
+            </Panel>
+            <Separator className="w-px bg-gray-300 hover:bg-sky-500 cursor-col-resize transition-colors" />
+            <Panel defaultSize={100} minSize={400} className="bg-white border border-gray-300 h-auto flex flex-col">
+                <div className="px-4 py-4 border-b border-gray-200 flex items-center justify-between">
+                    <div>
+                        <h2 className="font-semibold">Terraform Editor</h2>
+                        <p className='text-slate-500'>main.tf</p>
+                    </div>
+                    <div className='flex gap-4'>
+                        <button className='border border-gray-300 rounded-xl px-5 py-2 hover:bg-gray-100'>Copy</button>
+                        <button className='border border-gray-300 rounded-xl px-5 py-2 hover:bg-gray-100'>Download</button>
+                    </div>
+                </div>
+                <div className="flex-1 min-h-0">
+                    <Editor
+                        height="calc(100vh - 12rem)"
+                        theme="vs-dark"
+                        defaultLanguage="hcl"
+                        value={terraformCode}
+                        beforeMount={(monaco) => {
+                            monaco.editor.defineTheme('infrascribe', {
+                                base: 'vs-dark',
+                                inherit: true,
+                                rules: [{ token: '', foreground: '9cdcfe' }],
+                                colors: {},
+                            })
+                        }}
+                        onMount={(_, monaco) => {
+                            monaco.editor.setTheme('infrascribe')
+                        }}
+                    />
+                </div>
+            </Panel>
+        </Group>
         </div>
-        </>
     )
 }
 export default BotChat
